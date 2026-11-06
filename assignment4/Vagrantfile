@@ -1,0 +1,45 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-22.04"    # Ubuntu 22.04
+  config.vm.box_architecture = "arm64"
+  config.vm.hostname = "ns3"
+  
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "ns3"
+    vb.memory = 2048
+    vb.cpus = 2
+  end
+  
+  config.vm.provision "shell", inline: <<-SHELL
+    # Update and install dependencies
+    apt-get update
+    apt-get install -y git \
+      openvswitch-switch iproute2 iputils-ping net-tools python3 sudo \
+      python3-pip python3-setuptools net-tools ethtool tcpdump
+    
+    # Install Docker
+    # Add Docker's official GPG key
+    apt-get install -y ca-certificates curl gnupg
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+    
+    # Add Docker repository
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      tee /etc/apt/sources.list.d/docker.list > /dev/null
+    
+    # Install Docker Engine
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    
+    # Add vagrant user to docker group (so you don't need sudo)
+    usermod -aG docker vagrant
+    
+    # Start and enable Docker
+    systemctl enable docker
+    systemctl start docker
+    
+    echo "Docker installed successfully!"
+  SHELL
+end

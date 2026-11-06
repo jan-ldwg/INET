@@ -1,0 +1,10 @@
+/assignment4/ns-3.45
+
+
+# ignore build files
+*/.vagrant/
+*/__pycache__/
+
+
+# macOS stuff
+.DS_Store

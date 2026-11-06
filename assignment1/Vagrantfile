@@ -1,0 +1,46 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-22.04"    # Ubuntu 22.04
+  config.vm.box_architecture = "arm64"
+  config.vm.hostname = "mininet"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "mininet"
+    vb.memory = 2048
+    vb.cpus = 2
+  end
+
+  config.vm.provision "shell", inline: <<-SHELL
+    # Update and install dependencies
+    apt-get update
+    apt-get install -y git \
+      openvswitch-switch iproute2 iputils-ping net-tools python3 sudo \
+      python3-pip python3-setuptools net-tools ethtool tcpdump mpich libopenmpi-dev \
+      python3-gevent python3-eventlet \
+      iperf3
+
+    git clone https://github.com/mininet/mininet.git /opt/mininet
+    cd /opt/mininet
+    ./util/install.sh -nfv
+
+    su - vagrant -c "pip install --no-cache-dir ryu"
+    su - vagrant -c "pip install --no-cache-dir mpi4py numpy"
+
+    echo '
+    # Connect to a Mininet host namespace
+    mnc() {
+        if [ -z "$1" ]; then
+            echo "Usage: mnc <host>"
+            return 1
+        fi
+        host=$1
+        pid=$(pgrep -f "mininet:$host")
+        if [ -z "$pid" ]; then
+            echo "Host '\''$host'\'' not found!"
+            return 1
+        fi
+        sudo mnexec -a $pid bash
+    }
+    ' >> /home/vagrant/.bashrc
+  SHELL
+end
+
