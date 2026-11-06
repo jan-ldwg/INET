@@ -10,6 +10,13 @@
 #include <string>
 
 using namespace ns3;
+
+void TxCallback(Ptr<OutputStreamWrapper> stream,
+    Ptr <const Packet> packet){
+        *stream->GetStream() << Simulator::Now().GetSeconds() <<
+        " " << packet->GetSize() <<std::endl;
+    }
+
 int main(int argc, char* argv[])
 {
     int simulationTime = 20;
@@ -81,7 +88,17 @@ int main(int argc, char* argv[])
     rcv_app.Start(Seconds(0.0));
     rcv_app.Stop(Seconds(20.0));
 
-    
+
+    //AsciiHelper @24:40 in video
+    //this is only an example, not what is required for the task
+    AsciiTraceHelper ascii;
+    Ptr<OutputStreamWrapper> txStream = 
+        ascii.CreateFileStream("onoff-tx-trace.txt");
+    Config::ConnectWithoutContext(
+        "/NodeList/0/ApplicationList/0/$ns3::OnOffApplication/Tx",
+        MakeBoundCallback(&TxCallback, txStream)
+    );
+
 
 
 

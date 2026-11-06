@@ -1,6 +1,7 @@
-#ignore ns-3 source code but allow scratch dir with sim file
+#ignore ns-3 source code but allow scratch dir with sim file and output dir
 /assignment4/ns-3.45/*
 !/assignment4/ns-3.45/scratch/
+!/assignment4/ns-3.45/output
 /assignment4/ns-3.45/scratch/*
 !/assignment4/ns-3.45/scratch/npa-04.cc
 

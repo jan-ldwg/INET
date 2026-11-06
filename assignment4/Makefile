@@ -17,11 +17,14 @@ build_ns3: build_docker_image
 		./ns3 build \
 		"
 
-run: 
+OUT_DIR ?= output
+
+run:
 ifndef SCRIPT
 	$(error No script provided. Usage: make run SCRIPT=your-script.)
 endif
 	$(DCMD) bash -c " \
+		mkdir -p /ns3/$(OUT_DIR) && \
 		cd /ns3 && \
-		./ns3 run $(SCRIPT) \
+		./ns3 run $(SCRIPT) --cwd=/ns3/$(OUT_DIR) \
 		"
