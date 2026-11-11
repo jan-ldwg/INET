@@ -22,3 +22,13 @@ make run NS3_PATH=$(pwd)/ns-3.45 SCRIPT=hello-simulator
 ```
 
 This should print `Hello Simulator` to the console.
+
+5. Put the script you want to run into the scratch folder of ns3
+
+6. Run the script with
+
+```sh
+make run NS3_PATH=$(pwd)/ns-3.45 SCRIPT=npa-04 ARGS="--queueDiscType=FifoQueueDisc"
+make run NS3_PATH=$(pwd)/ns-3.45 SCRIPT=npa-04 ARGS="--queueDiscType=CoDelQueueDisc"
+make run NS3_PATH=$(pwd)/ns-3.45 SCRIPT=npa-04 ARGS="--queueDiscType=RedQueueDisc"
+```

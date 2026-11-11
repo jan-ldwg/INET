@@ -11,11 +11,18 @@
 
 using namespace ns3;
 
-void TxCallback(Ptr<OutputStreamWrapper> stream,
-    Ptr <const Packet> packet){
-        *stream->GetStream() << Simulator::Now().GetSeconds() <<
-        " " << packet->GetSize() <<std::endl;
-    }
+
+void PingCallback(Ptr<OutputStreamWrapper> stream, uint16_t seq, Time rtt)
+{
+    *stream->GetStream() << Simulator::Now().GetSeconds() << " " << 
+        rtt.GetSeconds() << std::endl;
+}
+
+void QueueCallback(Ptr<OutputStreamWrapper> stream, uint32_t oldValue, uint32_t newValue)
+{
+    *stream->GetStream() << Simulator::Now().GetSeconds() << " " << 
+        newValue << std::endl;
+}
 
 int main(int argc, char* argv[])
 {
@@ -77,34 +84,47 @@ int main(int argc, char* argv[])
         InetSocketAddress(if_r2_h3.GetAddress(1), 1616));
     onoff.SetConstantRate(DataRate("2Mbps"), 1000);
 
-    ApplicationContainer app = onoff.Install(sources.Get(0));
-    app.Start(Seconds(5.0));
-    app.Stop(Seconds(15.0));
+    ApplicationContainer source_app = onoff.Install(sources.Get(0));
+    source_app.Start(Seconds(5.0));
+    source_app.Stop(Seconds(15.0));
 
     // install udp receiver on h3
     PacketSinkHelper rcv("ns3::UdpSocketFactory",
         InetSocketAddress(Ipv4Address::GetAny(), 1616));
-    ApplicationContainer rcv_app=rcv.Install(sink.Get(0));
-    rcv_app.Start(Seconds(0.0));
-    rcv_app.Stop(Seconds(20.0));
+    ApplicationContainer sink_app=rcv.Install(sink.Get(0));
+    sink_app.Start(Seconds(0.0));
+    sink_app.Stop(Seconds(20.0));
 
+    // install ping app on h2
+    PingHelper ping(if_r2_h3.GetAddress(1));
+    ApplicationContainer ping_app = ping.Install(sources.Get(1));
+    ping_app.Start(Seconds(0));
+    ping_app.Stop(Seconds(simulationTime));
 
-    //AsciiHelper @24:40 in video
-    //this is only an example, not what is required for the task
+    // add tracing to the ping app
     AsciiTraceHelper ascii;
-    Ptr<OutputStreamWrapper> txStream = 
-        ascii.CreateFileStream("onoff-tx-trace.txt");
+    Ptr<OutputStreamWrapper> pingStream =
+        ascii.CreateFileStream("ping_trace.txt");
     Config::ConnectWithoutContext(
-        "/NodeList/0/ApplicationList/0/$ns3::OnOffApplication/Tx",
-        MakeBoundCallback(&TxCallback, txStream)
+        "/NodeList/1/ApplicationList/0/$ns3::Ping/Rtt",
+        MakeBoundCallback(&PingCallback, pingStream)
     );
 
+    // install queue discipline according to CLI arg on r1 interface
+    TrafficControlHelper queueDiscipline;
+    queueDiscipline.SetRootQueueDisc("ns3::" + queueDiscType);
+    TrafficControlHelper::Default().Uninstall(r1_r2.Get(0));
+    QueueDiscContainer queueDiscApp = queueDiscipline.Install(r1_r2.Get(0));
+
+    // add tracing to the queue of r1
+    Ptr<OutputStreamWrapper> queueDiscStream =
+        ascii.CreateFileStream("queue_disc_trace.txt");
+    Ptr<QueueDisc> installedQueueDisc = queueDiscApp.Get(0);
+    installedQueueDisc->TraceConnectWithoutContext ("BytesInQueue",
+        MakeBoundCallback (&QueueCallback, queueDiscStream));
 
 
-
-    // TODO
-
-    std::cout << "Starting Simulation" << std::endl;
+    std::cout << "Starting Simulation with queue " << queueDiscType << std::endl;
     Simulator::Stop(Seconds(simulationTime));
     Simulator::Run();
     Simulator::Destroy();

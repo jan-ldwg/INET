@@ -26,5 +26,5 @@ endif
 	$(DCMD) bash -c " \
 		mkdir -p /ns3/$(OUT_DIR) && \
 		cd /ns3 && \
-		./ns3 run $(SCRIPT) --cwd=/ns3/$(OUT_DIR) \
+		./ns3 run '$(strip $(SCRIPT) $(ARGS))' --cwd=/ns3/$(OUT_DIR) \
 		"
