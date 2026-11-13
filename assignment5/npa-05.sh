@@ -178,32 +178,73 @@ assign_addresses() {
 
 # (d): Configure the default IPv6 route on each host.
 configure_host_routes() {
-    not_implemented configure_host_routes
+    ip netns exec $NS_H1 ip -6 route add default via $IP_R1_H1
+    ip netns exec $NS_H2 ip -6 route add default via $IP_R5_H2
 }
 
 # (e): Assign each router SID to its loopback interface.
 assign_sids() {
-    not_implemented assign_sids
+    ip netns exec $NS_R1 ip addr add ${SID_R1}/128 dev lo
+    ip netns exec $NS_R2 ip addr add ${SID_R2}/128 dev lo
+    ip netns exec $NS_R3 ip addr add ${SID_R3}/128 dev lo
+    ip netns exec $NS_R4 ip addr add ${SID_R4}/128 dev lo
+    ip netns exec $NS_R5 ip addr add ${SID_R5}/128 dev lo
 }
 
 # (f): Install routes to the remote router SIDs.
 configure_sid_routes() {
-    not_implemented configure_sid_routes
+    ip netns exec $NS_R1 ip -6 route add $SID_R2 dev $IF_R1_R2
+    ip netns exec $NS_R2 ip -6 route add $SID_R3 dev $IF_R2_R3
+    ip netns exec $NS_R3 ip -6 route add $SID_R5 dev $IF_R3_R5
+
+    ip netns exec $NS_R5 ip -6 route add $SID_R4 dev $IF_R5_R4
+    ip netns exec $NS_R4 ip -6 route add $SID_R1 dev $IF_R4_R1
 }
 
 # (g): Enable IPv6 forwarding and SRv6 on the routers/interfaces.
 enable_forwarding() {
-    not_implemented enable_forwarding
+    ip netns exec $NS_R1 sysctl -w net.ipv6.conf.all.forwarding=1
+    ip netns exec $NS_R2 sysctl -w net.ipv6.conf.all.forwarding=1
+    ip netns exec $NS_R3 sysctl -w net.ipv6.conf.all.forwarding=1
+    ip netns exec $NS_R4 sysctl -w net.ipv6.conf.all.forwarding=1
+    ip netns exec $NS_R5 sysctl -w net.ipv6.conf.all.forwarding=1
+
+    ip netns exec $NS_R1 sysctl -w net.ipv6.conf.all.seg6_enabled=1
+    ip netns exec $NS_R2 sysctl -w net.ipv6.conf.all.seg6_enabled=1
+    ip netns exec $NS_R3 sysctl -w net.ipv6.conf.all.seg6_enabled=1
+    ip netns exec $NS_R4 sysctl -w net.ipv6.conf.all.seg6_enabled=1
+    ip netns exec $NS_R5 sysctl -w net.ipv6.conf.all.seg6_enabled=1
+
+    ip netns exec $NS_R1 sysctl -w net.ipv6.conf.${IF_R1_R2}.seg6_enabled=1
+    ip netns exec $NS_R1 sysctl -w net.ipv6.conf.${IF_R1_R4}.seg6_enabled=1
+
+    ip netns exec $NS_R2 sysctl -w net.ipv6.conf.${IF_R2_R3}.seg6_enabled=1
+    ip netns exec $NS_R2 sysctl -w net.ipv6.conf.${IF_R2_R1}.seg6_enabled=1
+
+    ip netns exec $NS_R3 sysctl -w net.ipv6.conf.${IF_R3_R5}.seg6_enabled=1
+    ip netns exec $NS_R3 sysctl -w net.ipv6.conf.${IF_R3_R2}.seg6_enabled=1
+
+    ip netns exec $NS_R4 sysctl -w net.ipv6.conf.${IF_R4_R5}.seg6_enabled=1
+    ip netns exec $NS_R4 sysctl -w net.ipv6.conf.${IF_R4_R1}.seg6_enabled=1
+
+    ip netns exec $NS_R5 sysctl -w net.ipv6.conf.${IF_R5_R3}.seg6_enabled=1
+    ip netns exec $NS_R5 sysctl -w net.ipv6.conf.${IF_R5_R4}.seg6_enabled=1
 }
 
 # (h): Configure SID actions: End on R2/R3/R4, End.DT6 on R1/R5.
 configure_end_actions() {
-    not_implemented configure_end_actions
+    ip netns exec $NS_R2 ip route add $SID_R2 encap seg6local action End dev lo
+    ip netns exec $NS_R3 ip route add $SID_R3 encap seg6local action End dev lo
+    ip netns exec $NS_R4 ip route add $SID_R4 encap seg6local action End dev lo
+
+    ip netns exec $NS_R1 ip route add $SID_R1 encap seg6local action End.DT6 dev lo
+    ip netns exec $NS_R5 ip route add $SID_R5 encap seg6local action End.DT6 dev lo
 }
 
 # (i): Configure the forward and return SRv6 paths.
 configure_srv6_routes() {
-    not_implemented configure_srv6_routes
+    ip netns exec $NS_R1 ip -6 route add $IP_H2_R5 encap seg6 mode encap segs ${SID_R2},${SID_R3},${SID_R5} dev $IF_R1_R2
+    ip netns exec $NS_R5 ip -6 route add $IP_H1_R1 encap seg6 mode encap segs ${SID_R4},${SID_R1} dev $IF_R5_R4
 }
 
 # (j): Verify IPv6 connectivity from H1 to H2 with five echo requests.
