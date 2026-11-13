@@ -109,7 +109,33 @@ create_namespaces() {
 
 # (b): Create the veth links and move/enable each endpoint.
 create_links() {
-    not_implemented create_links
+    ip link add $IF_H1_R1 type veth peer name $IF_R1_H1
+    ip link set $IF_H1_R1 netns $NS_H1
+    ip link set $IF_R1_H1 netns $NS_R1
+
+    ip link add $IF_R1_R2 type veth peer name $IF_R2_R1
+    ip link set $IF_R1_R2 netns $NS_R1
+    ip link set $IF_R2_R1 netns $NS_R2
+
+    ip link add $IF_R2_R3 type veth peer name $IF_R3_R2
+    ip link set $IF_R2_R3 netns $NS_R2
+    ip link set $IF_R3_R2 netns $NS_R3
+
+    ip link add $IF_R1_R4 type veth peer name $IF_R4_R1
+    ip link set $IF_R1_R4 netns $NS_R1
+    ip link set $IF_R4_R1 netns $NS_R4
+
+    ip link add $IF_R3_R5 type veth peer name $IF_R5_R3
+    ip link set $IF_R3_R5 netns $NS_R3
+    ip link set $IF_R5_R3 netns $NS_R5
+
+    ip link add $IF_R4_R5 type veth peer name $IF_R5_R4
+    ip link set $IF_R4_R5 netns $NS_R4
+    ip link set $IF_R5_R4 netns $NS_R5
+
+    ip link add $IF_H2_R5 type veth peer name $IF_R5_H2
+    ip link set $IF_H2_R5 netns $NS_H2
+    ip link set $IF_R5_H2 netns $NS_R5
 }
 
 # (c): Assign the provided endpoint addresses with the corresponding prefixes.
