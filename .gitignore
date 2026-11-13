@@ -5,6 +5,8 @@
 /assignment4/ns-3.45/scratch/*
 !/assignment4/ns-3.45/scratch/npa-04.cc
 
+/assignment5/students.csv
+
 
 # ignore build files
 */.vagrant/
