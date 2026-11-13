@@ -140,7 +140,40 @@ create_links() {
 
 # (c): Assign the provided endpoint addresses with the corresponding prefixes.
 assign_addresses() {
-    not_implemented assign_addresses
+    ip netns exec $NS_H1 ip addr add ${IP_H1_R1}/64 dev $IF_H1_R1
+    ip netns exec $NS_R1 ip addr add ${IP_R1_H1}/64 dev $IF_R1_H1
+    ip netns exec $NS_H1 ip link set dev $IF_H1_R1 up
+    ip netns exec $NS_R1 ip link set dev $IF_R1_H1 up
+
+    ip netns exec $NS_R1 ip addr add ${IP_R1_R2}/64 dev $IF_R1_R2
+    ip netns exec $NS_R2 ip addr add ${IP_R2_R1}/64 dev $IF_R2_R1
+    ip netns exec $NS_R1 ip link set dev $IF_R1_R2 up
+    ip netns exec $NS_R2 ip link set dev $IF_R2_R1 up
+
+    ip netns exec $NS_R2 ip addr add ${IP_R2_R3}/64 dev $IF_R2_R3
+    ip netns exec $NS_R3 ip addr add ${IP_R3_R2}/64 dev $IF_R3_R2
+    ip netns exec $NS_R2 ip link set dev $IF_R2_R3 up
+    ip netns exec $NS_R3 ip link set dev $IF_R3_R2 up
+
+    ip netns exec $NS_R1 ip addr add ${IP_R1_R4}/64 dev $IF_R1_R4
+    ip netns exec $NS_R4 ip addr add ${IP_R4_R1}/64 dev $IF_R4_R1
+    ip netns exec $NS_R1 ip link set dev $IF_R1_R4 up
+    ip netns exec $NS_R4 ip link set dev $IF_R4_R1 up
+
+    ip netns exec $NS_R3 ip addr add ${IP_R3_R5}/64 dev $IF_R3_R5
+    ip netns exec $NS_R5 ip addr add ${IP_R5_R3}/64 dev $IF_R5_R3
+    ip netns exec $NS_R3 ip link set dev $IF_R3_R5 up
+    ip netns exec $NS_R5 ip link set dev $IF_R5_R3 up
+
+    ip netns exec $NS_R4 ip addr add ${IP_R4_R5}/64 dev $IF_R4_R5
+    ip netns exec $NS_R5 ip addr add ${IP_R5_R4}/64 dev $IF_R5_R4
+    ip netns exec $NS_R4 ip link set dev $IF_R4_R5 up
+    ip netns exec $NS_R5 ip link set dev $IF_R5_R4 up
+
+    ip netns exec $NS_H2 ip addr add ${IP_H2_R5}/64 dev $IF_H2_R5
+    ip netns exec $NS_R5 ip addr add ${IP_R5_H2}/64 dev $IF_R5_H2
+    ip netns exec $NS_H2 ip link set dev $IF_H2_R5 up
+    ip netns exec $NS_R5 ip link set dev $IF_R5_H2 up
 }
 
 # (d): Configure the default IPv6 route on each host.

@@ -8,3 +8,4 @@
 | `ip link set dev <if> up`                       | Enables an interface                        |
 | `ip link add <name> type veth peer name <name>` | Add a link                                  |
 | `ip link set <name> netns <ns>`                 | Assign end of a link to a network namespace |
+| `ip addr add <ip> dev <if>`                     | Assigns an IP address to the interface      |
