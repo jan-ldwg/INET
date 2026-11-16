@@ -193,12 +193,12 @@ assign_sids() {
 
 # (f): Install routes to the remote router SIDs.
 configure_sid_routes() {
-    ip netns exec $NS_R1 ip -6 route add $SID_R2 dev $IF_R1_R2
-    ip netns exec $NS_R2 ip -6 route add $SID_R3 dev $IF_R2_R3
-    ip netns exec $NS_R3 ip -6 route add $SID_R5 dev $IF_R3_R5
+    ip netns exec $NS_R1 ip -6 route add $SID_R2 via $IP_R2_R1 dev $IF_R1_R2
+    ip netns exec $NS_R2 ip -6 route add $SID_R3 via $IP_R3_R2 dev $IF_R2_R3
+    ip netns exec $NS_R3 ip -6 route add $SID_R5 via $IP_R5_R3 dev $IF_R3_R5
 
-    ip netns exec $NS_R5 ip -6 route add $SID_R4 dev $IF_R5_R4
-    ip netns exec $NS_R4 ip -6 route add $SID_R1 dev $IF_R4_R1
+    ip netns exec $NS_R5 ip -6 route add $SID_R4 via $IP_R4_R5 dev $IF_R5_R4
+    ip netns exec $NS_R4 ip -6 route add $SID_R1 via $IP_R1_R4 dev $IF_R4_R1
 }
 
 # (g): Enable IPv6 forwarding and SRv6 on the routers/interfaces.
@@ -237,36 +237,138 @@ configure_end_actions() {
     ip netns exec $NS_R3 ip route add $SID_R3 encap seg6local action End dev lo
     ip netns exec $NS_R4 ip route add $SID_R4 encap seg6local action End dev lo
 
-    ip netns exec $NS_R1 ip route add $SID_R1 encap seg6local action End.DT6 dev lo
-    ip netns exec $NS_R5 ip route add $SID_R5 encap seg6local action End.DT6 dev lo
+# table 254 is the main linux routing table
+    ip netns exec $NS_R1 ip route add $SID_R1 encap seg6local action End.DT6 table 254 dev lo
+    ip netns exec $NS_R5 ip route add $SID_R5 encap seg6local action End.DT6 table 254 dev lo
 }
 
 # (i): Configure the forward and return SRv6 paths.
 configure_srv6_routes() {
-    ip netns exec $NS_R1 ip -6 route add $IP_H2_R5 encap seg6 mode encap segs ${SID_R2},${SID_R3},${SID_R5} dev $IF_R1_R2
-    ip netns exec $NS_R5 ip -6 route add $IP_H1_R1 encap seg6 mode encap segs ${SID_R4},${SID_R1} dev $IF_R5_R4
+    ip netns exec $NS_R1 ip -6 route add $NET_H2_R5 encap seg6 mode encap segs ${SID_R2},${SID_R3},${SID_R5} dev $IF_R1_R2
+    ip netns exec $NS_R5 ip -6 route add $NET_H1_R1 encap seg6 mode encap segs ${SID_R4},${SID_R1} dev $IF_R5_R4
 }
 
 # (j): Verify IPv6 connectivity from H1 to H2 with five echo requests.
 # Probe-status globals remain available to verify_paths.
 send_probes() {
-    not_implemented send_probes
+    ip netns exec $NS_H1 ping6 -c 5 $IP_H2_R5
 }
 
 # (k): Accept start or stop: start/wait for captures, or stop/wait for them.
 # Save captures under CAPTURE_DIR or another directory of your choice.
 capture_traffic() {
-    not_implemented capture_traffic
+    local action="${1}"
+    case "$action" in
+        start) capture_start ;;
+        stop)  capture_stop ;;
+        *) echo "Usage: capture_traffic start|stop" >&2; return 2 ;;
+    esac
 }
 
 # (l): Check completed captures for both intended paths and wrong-path traffic.
 verify_paths() {
-    not_implemented verify_paths
+    local ns f ok=1
+    local req="icmpv6.type == 128 && ipv6.addr == $IP_H1_R1 && ipv6.addr == $IP_H2_R5"
+    local rep="icmpv6.type == 129 && ipv6.addr == $IP_H1_R1 && ipv6.addr == $IP_H2_R5"
+    local n
+
+    # chdck that every router has at least one pcap, else return error
+    for ns in "${ROUTERS[@]}"; do
+        local found=0
+        for f in "$CAPTURE_DIR/${ns}"_*.pcap; do
+            [[ -s "$f" ]] && found=1
+        done
+        if [[ $found -eq 0 ]]; then
+            echo "Error: no pcap for $ns" >&2
+            return 1
+        fi
+    done
+
+    # requests have to pass through R2 and R3 (should be 5 packets)
+    for ns in "$NS_R2" "$NS_R3"; do
+        n=$(count_matches "$ns" "$req")
+        if (( n < 5 )); then echo "Error: Requests through $ns: $n (expected 5)" >&2; ok=0; fi
+    done
+
+    # replies have to go through R4
+    n=$(count_matches "$NS_R4" "$rep")
+    if (( n < 5 )); then echo "Error: Replies through $NS_R4: $n (expected 5)" >&2; ok=0; fi
+
+    # checks that no packets are on the wrong path:
+    # no requests on R4, no replies on R2 and R3
+    n=$(count_matches "$NS_R4" "$req")
+    if (( n != 0 )); then echo "Error: Requests on wrong path ($NS_R4): $n" >&2; ok=0; fi
+    for ns in "$NS_R2" "$NS_R3"; do
+        n=$(count_matches "$ns" "$rep")
+        if (( n != 0 )); then echo "Error: Replies on wrong path ($ns): $n" >&2; ok=0; fi
+    done
+
+    if (( ok )); then
+        echo "Ok"
+        return 0
+    fi
+    return 1
 }
 # END SUBTASK FUNCTIONS
 
 # BEGIN OPTIONAL HELPER FUNCTIONS
 # Add helper function definitions here; do not call them outside functions.
+router_ifaces() {
+    # Gets all interfaces in the namespace, excluding lo, removes @suffix
+    ip -n "$1" -o link show | awk -F': ' '{print $2}' | sed 's/@.*//' | grep -v '^lo$' || true
+}
+
+capture_start() {
+    local ns ifc log pid i
+    mkdir -p "$CAPTURE_DIR"
+    rm -f "$CAPTURE_DIR"/*.pcap "$CAPTURE_DIR"/*.log "$CAPTURE_DIR"/pids
+    CAPTURE_PIDS=()
+    for ns in "${ROUTERS[@]}"; do
+        for ifc in $(router_ifaces "$ns"); do
+            log="$CAPTURE_DIR/${ns}_${ifc}.log"
+            ip netns exec "$ns" tcpdump -i "$ifc" -n -U -w "$CAPTURE_DIR/${ns}_${ifc}.pcap" ip6 \
+                >"$log" 2>&1 &
+            pid=$!
+            CAPTURE_PIDS+=("$pid")
+            echo "$pid" >> "$CAPTURE_DIR/pids"
+        done
+    done
+    # waits for all tcpdump processes to have started
+    for log in "$CAPTURE_DIR"/*.log; do
+        for i in $(seq 1 50); do
+            grep -q "listening on" "$log" 2>/dev/null && break
+            sleep 0.2
+        done
+        grep -q "listening on" "$log" 2>/dev/null || { echo "tcpdump nicht bereit: $log" >&2; return 1; }
+    done
+}
+
+capture_stop() {
+    local pid pids=()
+    if [[ -s "$CAPTURE_DIR/pids" ]]; then
+        mapfile -t pids < "$CAPTURE_DIR/pids"
+    fi
+    (( ${#pids[@]} )) || return 0          # idempotent
+    sleep 1                                # give tcpdump time to write the last packets
+    for pid in "${pids[@]}"; do kill -INT "$pid" 2>/dev/null || true; done
+    for pid in "${pids[@]}"; do
+        # waits for all processes to have properly finished
+        while kill -0 "$pid" 2>/dev/null; do sleep 0.1; done
+        wait "$pid" 2>/dev/null || true
+    done
+    CAPTURE_PIDS=()
+    rm -f "$CAPTURE_DIR/pids"
+}
+
+count_matches() {
+    local ns="$1" filter="$2" f n total=0
+    for f in "$CAPTURE_DIR/${ns}"_*.pcap; do
+        [[ -s "$f" ]] || continue
+        n=$(tshark -r "$f" -Y "$filter" 2>/dev/null | wc -l) || n=0
+        total=$((total + n))
+    done
+    echo "$total"
+}
 # END OPTIONAL HELPER FUNCTIONS
 
 # PROVIDED STAGE FUNCTIONS: leave these unchanged.
