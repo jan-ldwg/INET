@@ -11,11 +11,11 @@ q3_setup() {
     ip netns add "$NS_Q3_FW"
     ip -n "$NS_Q3_TX" link set lo up
     ip -n "$NS_Q3_FW" link set lo up
-    ip -n "$NS_Q3_TX" link add tx type veth peer name rx netns "$NS_Q3_FW"
-    ip -n "$NS_Q3_TX" link set tx address 02:00:00:00:06:01
-    ip -n "$NS_Q3_FW" link set rx address 02:00:00:00:06:02
-    ip -n "$NS_Q3_TX" link set tx up
-    ip -n "$NS_Q3_FW" link set rx up
+    ip -n "$NS_Q3_TX" link add name tx type veth peer name rx netns "$NS_Q3_FW"
+    ip -n "$NS_Q3_TX" link set dev tx address 02:00:00:00:06:01
+    ip -n "$NS_Q3_FW" link set dev rx address 02:00:00:00:06:02
+    ip -n "$NS_Q3_TX" link set dev tx up
+    ip -n "$NS_Q3_FW" link set dev rx up
     ip netns exec "$NS_Q3_FW" nft -c -f "$NPA06_FIREWALL"
     ip netns exec "$NS_Q3_FW" nft -f "$NPA06_FIREWALL"
 }
@@ -23,7 +23,11 @@ q3_setup() {
 q3_replay() {
     # $1 = supplied PCAP. Replay from NS_Q3_TX/tx, wait for completion.
     # Save nft -j list ruleset from NS_Q3_FW to "$NPA06_OUT/q3-counters.json".
-    echo 'TODO: q3_replay PCAP' >&2; return 2
+    ip netns exec "$NS_Q3_TX" tcpreplay -i tx "$1" || return 1
+
+    sleep 1
+
+    ip netns exec "$NS_Q3_FW" nft -j list ruleset > "$NPA06_OUT/q3-counters.json"
 }
 
 cleanup() {

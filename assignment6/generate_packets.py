@@ -12,8 +12,15 @@ def main():
     args = p.parse_args()
     packets = [Ether(src=args.src_mac, dst=args.dst_mac) /
                IP(src="192.168.1.25", dst="198.18.1.1") /
-               TCP(sport=40000, dport=80, flags="S")]
-    # TODO: add packets for the remaining firewall rules.
+               TCP(sport=40000, dport=80, flags="S"),
+               Ether(src=args.src_mac, dst=args.dst_mac) /
+               IP(src="192.168.1.25", dst="192.18.1.1") /
+               TCP(sport=40000, dport=443, flags="S"),
+               Ether(src=args.src_mac, dst=args.dst_mac) /
+               IP(src="192.168.1.25", dst="192.168.1.10") /
+               TCP(sport=4000, dport=22, flags="S")               
+               ]
+
     wrpcap(args.output, packets)
 
 

@@ -1,1 +1,17 @@
 #!/usr/sbin/nft -f
+
+
+# deletes all existing rules
+flush ruleset
+
+table ip basic_filter {
+    chain prerouting {
+        type filter hook prerouting priority filter; policy drop;
+
+        ip saddr 192.168.1.0/24 tcp dport 80 counter accept
+
+        ip saddr 192.168.1.0/24 tcp dport 443 counter accept
+
+        ip daddr 192.168.1.10 tcp dport 22 counter drop
+    }
+}
