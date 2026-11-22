@@ -1,6 +1,6 @@
 Vagrant.configure("2") do |config|
   config.vm.box = "bento/ubuntu-22.04"    # Ubuntu 22.04
-  config.vm.box_architecture = "arm64"
+  config.vm.box_architecture = "arm64"    # amd64 for x86
   config.vm.hostname = "srv6"
   
   config.vm.provider "virtualbox" do |vb|
