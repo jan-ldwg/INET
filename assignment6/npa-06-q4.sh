@@ -43,8 +43,7 @@ q4_fifo() {
     # Supplied: clear the previous child before changing its qdisc type.
     ip netns exec "$NS_ROUTER" tc qdisc del dev wan parent 1:1 2>/dev/null || true
     # Base command: replace CONFIGURATION with the qdisc and its options.
-    # ip netns exec "$NS_ROUTER" tc qdisc replace dev wan parent 1:1 handle 10: CONFIGURATION
-    echo 'TODO: q4_fifo' >&2; return 2
+    ip netns exec "$NS_ROUTER" tc qdisc replace dev wan parent 1:1 handle 10: pfifo limit 100
 }
 
 q4_prio() {
@@ -54,8 +53,22 @@ q4_prio() {
     # Supplied: clear the FIFO before installing PRIO with the same handle.
     ip netns exec "$NS_ROUTER" tc qdisc del dev wan parent 1:1 2>/dev/null || true
     # Base command: replace CONFIGURATION with the qdisc and its options.
-    # ip netns exec "$NS_ROUTER" tc qdisc replace dev wan parent 1:1 handle 10: CONFIGURATION
-    echo 'TODO: q4_prio' >&2; return 2
+    ip netns exec "$NS_ROUTER" tc qdisc replace dev wan parent 1:1 handle 10: \
+        prio bands 3 priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
+
+    # add pfifo qdisc to every band
+    ip netns exec "$NS_ROUTER" tc qdisc replace dev wan parent 10:1 handle 11: pfifo limit 100
+    ip netns exec "$NS_ROUTER" tc qdisc replace dev wan parent 10:2 handle 12: pfifo limit 100
+    ip netns exec "$NS_ROUTER" tc qdisc replace dev wan parent 10:3 handle 13: pfifo limit 100
+
+    # assign icmp to band 0
+    ip netns exec "$NS_ROUTER" tc filter replace dev wan parent 10: protocol ip prio 1 \
+        flower ip_proto icmp type 8 code 0 classid 10:1 action pass
+
+    # assign udp to band 1
+    ip netns exec "$NS_ROUTER" tc filter replace dev wan parent 10: protocol ip prio 2 \
+        flower ip_proto udp dst_port 5000 classid 10:2 action pass
+
 }
 
 q4_measure() {
@@ -64,13 +77,130 @@ q4_measure() {
     # Save original ping output and ping.csv (sequence,time_s,rtt_ms,lost).
     # Use real measurements; leave missing RTTs blank and wait for all workers.
     # In the PRIO run, inspect filters after traffic finishes, before cleanup.
-    echo 'TODO: q4_measure MODE OUTDIR' >&2; return 2
+
+    local mode="$1" out="$2"
+    local count=200
+    local server_pid ping_pid client_pid t0
+
+    case "$mode" in
+        fifo|prio) ;;
+        *) echo "usage: q4_measure fifo|prio OUTDIR" >&2; return 1 ;;
+    esac
+    mkdir -p "$out" || return 1
+    #export LC_ALL=C   # decimal point in ping output
+
+    # iperf3 server in the server namespace (UDP dst port 5000, exits after one test)
+    ip netns exec "$NS_SERVER" iperf3 -s -p 5000 -1 > "$out/iperf3_server.txt" 2>&1 &
+    server_pid=$!
+    sleep 1
+
+    # ping 200 requests, 0.1s interval=20s
+    t0=$(date +%s.%N)
+    ip netns exec "$NS_CLIENT" ping -D -i 0.1 -c "$count" -W 1 203.0.113.2 > "$out/ping.txt" 2>&1 &
+    ping_pid=$!
+
+    # wait 5s, then udp flood for 10s
+    (
+        sleep 5
+        ip netns exec "$NS_CLIENT" iperf3 -c 203.0.113.2 -u -b 20M -l 1200 \
+            -p 5000 -t 10 > "$out/iperf3_client.txt" 2>&1
+    ) &
+    client_pid=$!
+
+    # wait for ping and iperf to finish
+    wait "$ping_pid"
+    wait "$client_pid"
+    # end the iperf server process if it didnt end itself already
+    kill "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+
+    # Qdisc statistics (both modes); filter statistics only in the PRIO run,
+    # after the traffic has finished and before any cleanup
+    ip netns exec "$NS_ROUTER" tc -s -d qdisc show dev wan > "$out/qdisc_stats.txt" 2>&1
+    if [ "$mode" = prio ]; then
+        ip netns exec "$NS_ROUTER" tc -s -d filter show dev wan parent 10: > "$out/filter_stats.txt" 2>&1
+    fi
+
+    # ping.csv: sequence,time_s,rtt_ms,lost  (lost pings: empty RTT, lost=1)
+    awk -v t0="$t0" -v n="$count" -v iv=0.1 '
+        /icmp_seq=/ && /time=/ {
+            ts = $1; gsub(/[\[\]]/, "", ts)
+            match($0, /icmp_seq=[0-9]+/); seq = substr($0, RSTART + 9, RLENGTH - 9) + 0
+            match($0, /time=[0-9.]+/);    rtt = substr($0, RSTART + 5, RLENGTH - 5)
+            rtt_of[seq] = rtt; ts_of[seq] = ts
+        }
+        END {
+            print "sequence,time_s,rtt_ms,lost"
+            for (i = 1; i <= n; i++) {
+                if (i in rtt_of)   # send time = receive time - RTT - start
+                    printf "%d,%.3f,%s,0\n", i, ts_of[i] - t0 - rtt_of[i] / 1000, rtt_of[i]
+                else               # lost: nominal send time, RTT left blank
+                    printf "%d,%.3f,,1\n", i, (i - 1) * iv
+            }
+        }' "$out/ping.txt" > "$out/ping.csv"
 }
 
 q4_plot() {
     # $1 contains fifo/ping.csv and prio/ping.csv. Produce one comparison
     # plot at "$1/plots/qos-ping.png" or "$1/plots/qos-ping.pdf" (or both).
-    echo 'TODO: q4_plot ROOTDIR' >&2; return 2
+
+    local root="$1"
+    [ -n "$root" ] || { echo "usage: q4_plot ROOTDIR" >&2; return 1; }
+    for m in fifo prio; do
+        [ -r "$root/$m/ping.csv" ] || { echo "missing $root/$m/ping.csv" >&2; return 1; }
+    done
+    mkdir -p "$root/plots" || return 1
+
+    python3 - "$root" <<'EOF'
+import csv, math, sys
+import matplotlib
+matplotlib.use("Agg")                      # no display needed
+import matplotlib.pyplot as plt
+
+root = sys.argv[1]
+runs = {"fifo": ("FIFO", "tab:red"), "prio": ("PRIO", "tab:blue")}
+counts = []
+
+fig, ax = plt.subplots(figsize=(10, 5))
+
+# UDP flood active from t = 5 s to t = 15 s
+ax.axvspan(5, 15, color="grey", alpha=0.2, label="UDP flood active (5-15 s)")
+
+for key, (label, color) in runs.items():
+    t, rtt = [], []
+    sent = replied = 0
+    with open(f"{root}/{key}/ping.csv", newline="") as f:
+        for row in csv.DictReader(f):
+            sent += 1
+            t.append(float(row["time_s"]))
+            if row["rtt_ms"].strip() == "":
+                rtt.append(math.nan)       # lost: NaN -> gap in the line
+            else:
+                rtt.append(float(row["rtt_ms"]))
+                replied += 1
+    counts.append(f"{label}: sent={sent}, replied={replied}, lost={sent - replied}")
+    # NaN breaks the line (gap); small markers keep isolated points visible
+    ax.plot(t, rtt, color=color, linewidth=1.0, marker=".", markersize=3,
+            label=f"{label} ({replied}/{sent} replies)")
+
+ax.set_xlabel("Elapsed time (s)")
+ax.set_ylabel("Ping RTT (ms)")
+ax.set_xscale("linear")
+ax.set_yscale("linear")
+ax.set_xlim(left=0)
+ax.set_ylim(bottom=0)
+ax.set_title("Ping RTT under UDP flood: FIFO vs. PRIO")
+ax.grid(True, alpha=0.3)
+ax.legend(loc="upper right")
+fig.tight_layout()
+fig.savefig(f"{root}/plots/qos-ping.png", dpi=150)
+
+text = "\n".join(counts)
+print(text)
+with open(f"{root}/plots/qos-ping-counts.txt", "w") as f:
+    f.write(text + "\n")
+EOF
+
 }
 
 cleanup() {
